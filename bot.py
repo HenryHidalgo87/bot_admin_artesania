@@ -1,8 +1,12 @@
 import logging
 import os
 import datetime
+from dotenv import load_dotenv
+from flask import Flask
+import threading
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
 
 # Configura el registro para depuración
 logging.basicConfig(
@@ -12,7 +16,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Token del bot (asegúrate de que esté configurado correctamente)
-TOKEN = "7741560402:AAGzzDFzBq4ohG8tBkTPHB7MML0gDTCIwrs"
+load_dotenv()
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # Lista de palabras inapropiadas
 BAD_WORDS = ["idiota", "imbécil", "estúpido", "tonto", "gilipollas", "capullo", 
@@ -128,14 +133,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     await update.message.reply_text(welcome_message)
 
-# Función para manejar mensajes de texto
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_message = update.message.text
+# # Función para manejar mensajes de texto
+# async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+#     user_message = update.message.text
 
-    # Llama a las funciones de moderación, antispam y auto respuestas
-    await moderate_language(update, context)
-    await antispam(update, context)
-    await auto_reply(update, context)
+#     # Llama a las funciones de moderación, antispam y auto respuestas
+#     await moderate_language(update, context)
+#     await antispam(update, context)
+#     await auto_reply(update, context)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        await moderate_language(update, context)
+        await antispam(update, context)
+        await auto_reply(update, context)
+    except Exception as e:
+        logger.error(f"Error al manejar mensaje: {e}")
+
 
 # Función para enviar recordatorios mensuales
 async def send_monthly_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -149,18 +163,36 @@ async def start_monthly_reminders(update: Update, context: ContextTypes.DEFAULT_
     context.job_queue.run_monthly(send_monthly_reminder, time=first_day_of_month.time(), day=1, chat_id=update.effective_chat.id)
     await update.message.reply_text("Recordatorios mensuales activados para el primer día de cada mes a las 9:00 AM.")
 
-def main() -> None:
-    # Crea la aplicación del bot
-    application = Application.builder().token(TOKEN).build()
+# --- NUEVO: Configuración del servidor Flask ---
+app = Flask('')
 
-    # Añade los controladores de comandos y mensajes
+@app.route('/')
+def home():
+    return "Bot activo y funcionando"
+
+def run_server():
+    app.run(host='0.0.0.0', port=3000, debug=False)
+
+
+
+# --- Modificación de la función principal ---
+def main() -> None:
+    # Inicia el servidor Flask en un hilo separado
+    threading.Thread(target=run_server).start()
+
+    # Configura el bot de Telegram
+    application = Application.builder().token(TOKEN).build()
+   # Añade los controladores de comandos y mensajes
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("monthly_reminders", start_monthly_reminders))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
 
     # Ejecuta el bot
     application.run_polling()
 
 if __name__ == '__main__':
     main()
+
+
